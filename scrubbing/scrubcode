@@ -1,0 +1,100 @@
+import pandas as pd
+import numpy as np
+
+def data():
+    df1 = pd.read_csv("ADMISSIONS.csv")
+    df2 = pd.read_csv("PATIENTS.csv")
+    return df1, df2
+
+def data_info(df1, df2):
+    print(df1.shape)
+    print(df1.columns)
+    print(df1.info())
+    print(df1.dtypes)
+    print(df1.isna().sum())
+    print(df2.shape)
+    print(df2.columns)
+    print(df2.info())
+    print(df2.dtypes)
+    print(df2.isna().sum())    
+
+def datetime_parse(df1, df2):
+    df1['admittime'] = pd.to_datetime(df1['admittime'], errors='coerce')
+    df1['dischtime'] = pd.to_datetime(df1['dischtime'], errors='coerce')
+    df1['deathtime'] = pd.to_datetime(df1['deathtime'], errors='coerce')
+    df1['edregtime'] = pd.to_datetime(df1['edregtime'], errors='coerce')
+    df1['edouttime'] = pd.to_datetime(df1['edouttime'], errors='coerce')
+    df2['dob'] = pd.to_datetime(df2['dob'], errors='coerce')
+    df2['dod'] = pd.to_datetime(df2['dod'], errors='coerce')
+    df2['dod_hosp'] = pd.to_datetime(df2['dod_hosp'], errors='coerce')
+    df2['dod_ssn'] = pd.to_datetime(df2['dod_ssn'], errors='coerce')
+    return df1, df2
+
+def merge(df1, df2):
+    df = pd.merge(df2, df1, on="subject_id", how='left')
+    return df
+
+def time_of_stay(df):
+    df["tos"] = (df["dischtime"] - df["admittime"]).dt.days.copy()
+    print(f'Number of 0s: {df["tos"].eq(0).sum()}')
+    df["tos"] = df["tos"].replace(0, np.nan)
+    return df
+
+def admission_age(df):
+    df["age"] = df["admittime"].dt.year - df["dob"].dt.year
+    print(f'Number of >= 89: {df["age"].eq(300).sum()}, which is {round(100*df["age"].eq(300).sum()/len(df),2)}%')
+    df[">89"] = 0
+    df[">89"] = df["age"].apply(lambda x: True if x==300 else False)
+    df["age"] = df["age"].replace(300, 89)
+    return df
+
+def mortality_flag(df):
+    df["in_hospital_mortality"] = (df["deathtime"].notna() & (df["deathtime"] >= df["admittime"]) & (df["deathtime"] <= df["dischtime"])).astype(int)
+    df["out_hospital_mortality"] = (df["deathtime"].notna() & (df["deathtime"] > df["dischtime"]) & (df["deathtime"] <= df["dischtime"] + pd.Timedelta(days=30))).astype(int)
+    return df
+
+def eda_pipeline(df):
+    dfn = df.select_dtypes(include=['int64', 'int32', 'float64'])
+    dfc = df.select_dtypes(include=['object'])
+    for x in dfn.columns: print(f'{x} | mean: {dfn[x].mean()}, median: {dfn[x].median()}, std: {dfn[x].std(ddof=1)}, Q1: {dfn[x].quantile(0.25)}, Q3: {dfn[x].quantile(0.75)}, skew: {dfn[x].skew()}')
+    for x in dfc.columns: print(f'{x} | unique: {dfc[x].unique()}, nunique: {dfc[x].nunique()}, frequency: {dfc[x].value_counts}')
+
+def los_stats(df):
+    los = df.groupby("admission_type")["tos"].quantile([0.25, 0.50, 0.75]).unstack().reset_index()
+    for x in range(len(los)): print(f'{los.iloc[x,0]} | tos: {los.iloc[x, 2]}[{los.iloc[x,3] - los.iloc[x,1]}]')
+    print(f'TOTAL | {df["tos"].median()}[{df["tos"].quantile(0.75) - df["tos"].quantile(0.25)}]')
+    return los
+
+def age_stats(df):
+    age1 = df.groupby(["gender", "in_hospital_mortality"])["age"].median()
+    return age1
+
+def mortality_stats(df):
+    options = ["ELECTIVE", "EMERGENCY", "URGENT"]
+    inmorm = df["in_hospital_mortality"].mean()
+    print(f'in hospital mortality on average: {round((inmorm*100),2)}% with a size of {len(df)} people')
+    inmora = df.groupby("admission_type")["in_hospital_mortality"].agg(["mean", "count"]).reset_index()
+    for index, row in inmora.iterrows(): 
+        print(f"in hospital mortality for {row['admission_type']}: {round(100 * row['mean'], 2)}% with a size of {row['count']} people")
+    outmorm = df["out_hospital_mortality"].mean()
+    print(f'out hospital mortality on average: {round((outmorm*100),2)}% with a size of {len(df)} people')
+    outmora = df.groupby("admission_type")["out_hospital_mortality"].agg(["mean", "count"]).reset_index()
+    for index, row in outmora.iterrows(): 
+        print(f"in hospital mortality for {row['admission_type']}: {round(100 * row['mean'], 2)}% with a size of {row['count']} people")
+    return inmorm, inmora, outmorm, outmora
+
+def data_cleaning():
+    df1, df2 = data()
+    #data_info(df1, df2)
+    df1, df2 = datetime_parse(df1, df2)
+    df = merge(df1, df2)
+    df = time_of_stay(df)
+    df = admission_age(df)
+    df = mortality_flag(df)
+    #eda_pipeline(df)
+    los = los_stats(df)
+    age1 = age_stats(df)
+    inmorm, inmora, outmorm, outmora = mortality_stats(df)
+    return df, los, age1, inmorm, inmora, outmorm, outmora
+
+df, los, age1, inmorm, inmora, outmorm, outmora = data_cleaning()
