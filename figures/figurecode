@@ -1,0 +1,92 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from cycler import cycler
+
+def visualization_params():
+    okabe_ito_colors = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
+    plt.rcParams['figure.figsize'] = (12, 10)
+    plt.rcParams['lines.linewidth'] = 2
+    plt.rcParams['axes.grid'] = True
+    plt.rcParams['axes.prop_cycle'] = cycler(color=okabe_ito_colors)
+
+def graph1(df, ax):
+    sns.histplot(data=df, x='tos', bins=30, hue='gender', ax=ax, kde=True)
+    ax.set_xlabel('Time of Stay (days)')
+    ax.set_ylabel('Count')
+    ax.axvline(x=df["tos"].mean(), color='red', linewidth=2, label='Mean')
+    ax.axvline(x=df["tos"].median(), color='green', linewidth=2, label='Median')
+    ax.set_title('Time of Stay Histogram, Normal Scale from MIMIC Dataset')
+    ax.legend(['Male', 'Female', 'Mean', 'Median'])
+    return ax
+
+def graph2(df, ax):
+    sns.histplot(data=df, x='tos', bins=30, hue='gender', ax=ax, kde=True)
+    ax.set_xscale('log')
+    ax.set_xlabel('Time of Stay (days)')
+    ax.set_ylabel('Count')
+    ax.axvline(x=df["tos"].mean(), color='red', linewidth=2, label='Mean')
+    ax.axvline(x=df["tos"].median(), color='green', linewidth=2, label='Median')
+    ax.set_title('Time of Stay Histogram, Log Scale from MIMIC Dataset')
+    ax.legend(['Male', 'Female', 'Mean', 'Median'])
+    return ax
+
+def graph3(df, ax):
+    los2 = df.groupby("admission_type")["tos"].agg(["median", "count"])
+    los3 = los2.reset_index().sort_values(by="median")
+    order = los2.sort_values(by="median").index.tolist()
+    sns.violinplot(data=df, x='admission_type', y='tos', ax=ax, inner=None, order=order)
+    sns.scatterplot(data=df, x='admission_type', y='tos', ax=ax, color='Gray')
+    ax.set_xlabel('Admission Type')
+    ax.set_ylabel('Time of Stay (Days)')
+    new_labels = [f"{row['admission_type']}\n({int(row['count'])})" for _, row in los3.iterrows()]
+    ax.set_xticklabels(new_labels)
+    ax.set_title('Time of Stay Against Admission Types from MIMIC Dataset')
+    return ax, order
+
+def graph4(df, ax):
+    sns.histplot(data=df, x='age', y='gender', ax=ax)
+    ax.axvline(x=89, color="Red", label=">89 Threshold")
+    ax.set_xlabel('Age')
+    ax.set_ylabel('Gender')
+    ax.set_title('Age vs. Gender Heatmap from MIMIC Dataset')
+    ax.legend()
+    return ax
+
+def graph5(inmora, order, ax):
+    sns.barplot(data=inmora, y="admission_type", x="mean", ax=ax, order=order)
+    for container in ax.containers: ax.bar_label(container, fmt="%.2f")
+    ax.set_xlabel('Mean Mortality Rate')
+    ax.set_ylabel('Admission Type')
+    ax.set_title('Mean Mortality Rate by Admission Type from MIMIC Dataset')
+    return ax
+
+def graph6(df, ax):
+    mortality_map = {0: "Alive", 1: "Deceased"}
+    df["mortality_clean"] = df["in_hospital_mortality"].map(mortality_map)
+    sns.scatterplot(data=df, y="tos", x="age", hue="mortality_clean", ax=ax, alpha=0.4)
+    for gender, group in df.groupby('mortality_clean'): 
+        clean_group = group[['age', 'tos']].dropna()
+        m, b = np.polyfit(clean_group['age'], clean_group['tos'], 1)
+        sns.regplot(data=clean_group, x='age', y='tos', scatter=False, label=f'{gender} Line: SBP = {m:.2f}*(Age) + {b:.1f}', ax=ax)
+    ax.set_xlabel("Age (years)")
+    ax.set_ylabel("Time of Stay (days)")
+    ax.set_title("Age vs. Time of Stay from MIMIC Dataset")
+    ax.legend()
+    return ax
+
+def full_graph(df, los, age1, inmorm, inmora, outmorm, outmora):
+    fig, axes = plt.subplots(3, 2)
+    graph1(df, ax=axes[0, 0])
+    graph2(df, ax=axes[0, 1])
+    ax, order = graph3(df, ax=axes[1, 0])
+    graph4(df, ax=axes[1, 1])
+    graph5(inmora, order, ax=axes[2, 0])
+    graph6(df, ax=axes[2, 1])
+    fig.tight_layout()
+    fig.savefig("Figures1")
+
+visualization_params()
+df = df[df['tos'].between(0, 40)] # Filters out one specific outlier
+full_graph(df, los, age1, inmorm, inmora, outmorm, outmora)
